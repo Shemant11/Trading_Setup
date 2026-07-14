@@ -5,8 +5,8 @@
 # Python: 3.12 or newer  (https://www.python.org/downloads/)
 #
 # One-shot setup on a fresh Windows PC (PowerShell, from repo root):
-#   python -m venv .venv
-#   .\.venv\Scripts\Activate.ps1
+#   python -m venv venv
+#   .\venv\Scripts\Activate.ps1
 #   python -m pip install --upgrade pip setuptools wheel
 #   pip install -r requirement.txt
 #   pip install -e .

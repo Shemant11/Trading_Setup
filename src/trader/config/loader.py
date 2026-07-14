@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from trader.config.paths import expand_path, normalize_sqlite_url
 
 
 def _parse_time(s: str | time) -> time:
@@ -26,7 +28,12 @@ def _parse_time(s: str | time) -> time:
 
 
 class _Section(BaseModel):
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    # ``validate_default=True`` so field validators (e.g. the ``~``-expander
+    # on :class:`StorageSection.db_url`) also fire on the built-in defaults,
+    # not only on values pulled from user YAML.
+    model_config = ConfigDict(
+        extra="allow", populate_by_name=True, validate_default=True
+    )
 
 
 class AppSection(_Section):
@@ -53,6 +60,19 @@ class StorageSection(_Section):
     redis_url: str = "redis://localhost:6379/0"
     parquet_root: str = "~/.trader/parquet"
     journal_batch_size: int = 100
+
+    @field_validator("db_url", mode="before")
+    @classmethod
+    def _normalize_db_url(cls, v: str) -> str:
+        # For SQLite: expand ``~`` / env vars, force forward slashes, and
+        # create the parent directory so the first connect succeeds. Any
+        # non-sqlite URL (Postgres, ...) is returned unchanged.
+        return normalize_sqlite_url(v) if v else v
+
+    @field_validator("parquet_root", mode="before")
+    @classmethod
+    def _normalize_parquet_root(cls, v: str) -> str:
+        return str(expand_path(v)) if v else v
 
 
 class TelegramSection(_Section):

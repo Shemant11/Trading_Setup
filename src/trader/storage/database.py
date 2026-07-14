@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from trader.config.paths import normalize_sqlite_url
 from trader.observability.logging import get_logger
 from trader.storage.models import Base
 
@@ -63,7 +64,13 @@ def create_database(url: str, *, echo: bool = False) -> Database:
     """Create a `Database` for the given URL.
 
     SQLite gets WAL mode automatically. Postgres/other backends are used as-is.
+
+    Defensive: always run the URL through :func:`normalize_sqlite_url` so
+    even callers that skipped the settings/AppConfig validators (e.g. one-off
+    scripts) still get ``~`` expansion + parent-directory creation for
+    SQLite files. Non-sqlite URLs are untouched.
     """
+    url = normalize_sqlite_url(url)
     is_sqlite = url.startswith("sqlite")
     engine = create_async_engine(
         url,

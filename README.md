@@ -57,6 +57,23 @@ src/trader/
     api/             # FastAPI control + dashboard
 ```
 
+# Every day, in order:
+.\venv\Scripts\Activate.ps1                             # 1. venv
+python run.py status                                    # 2. health
+python run.py ping-brokers                              # 3. broker creds
+
+# Choose ONE:
+$env:TRADER_ENV="paper"; python run.py run              # paper session
+$env:TRADER_ENV="live"; python run.py run               # live session
+
+# Anytime:
+python -m trader.cli kill                               # emergency stop
+python -m trader.cli resume                             # release kill switch
+python -m trader.cli reconcile                          # broker vs journal
+python run.py backtest equity_orb 2024-01-01 2024-12-31 # backtest
+python scripts\backup.py                                # nightly snapshot
+
+
 ## License
 
 MIT

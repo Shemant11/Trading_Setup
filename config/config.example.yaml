@@ -19,6 +19,11 @@ brokers:
 
 # Storage
 storage:
+  # ``~`` is expanded automatically at load time (see trader.config.paths).
+  # Windows users copying values by hand can also use the absolute form:
+  #   db_url: sqlite+aiosqlite:///C:/Users/<you>/.trader/trader.db
+  #   parquet_root: C:/Users/<you>/.trader/parquet
+  # Note the forward slashes and the three ``/`` after ``sqlite+aiosqlite:``.
   db_url: sqlite+aiosqlite:///~/.trader/trader.db
   redis_url: redis://localhost:6379/0
   parquet_root: ~/.trader/parquet
