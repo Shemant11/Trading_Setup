@@ -68,9 +68,18 @@ class BacktestEngine:
         )
         book = PortfolioTracker(starting_nav=self.starting_nav)
 
+        bars_seen = 0
+        bars_skipped_no_instrument = 0
+        signals_emitted = 0
+        signals_risk_rejected = 0
+        signals_unfilled = 0
+        signals_filled = 0
+
         for bar in bars:
+            bars_seen += 1
             inst = self.instruments.get(bar.instrument_id)
             if inst is None:
+                bars_skipped_no_instrument += 1
                 continue
             sim.observe_bar(bar)
 
@@ -78,18 +87,32 @@ class BacktestEngine:
             book.mark(bar.instrument_id, bar.close, bar.ts_close)
 
             signals = strategy(bar) or []
+            signals_emitted += len(signals)
             for sig in signals:
                 if risk_check is not None and not risk_check(sig):
+                    signals_risk_rejected += 1
                     continue
                 order = _signal_to_order(sig)
                 fill, fees = sim.fill(order, inst, bar.ts_close)
                 if fill is None:
+                    signals_unfilled += 1
                     continue
+                signals_filled += 1
                 book.on_fill(fill, strategy=sig.strategy, fees=fees, stop_price=sig.stop_price)
 
             if on_bar:
                 on_bar(bar)
             book.total_equity(ts=bar.ts_close)
+
+        logger.info(
+            "backtest_run_stats",
+            bars_seen=bars_seen,
+            bars_skipped_no_instrument=bars_skipped_no_instrument,
+            signals_emitted=signals_emitted,
+            signals_risk_rejected=signals_risk_rejected,
+            signals_unfilled=signals_unfilled,
+            signals_filled=signals_filled,
+        )
 
         pnl_by_strategy: dict[str, float] = {}
         for t in book.trades:

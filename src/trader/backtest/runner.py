@@ -85,6 +85,23 @@ class BacktestRunner:
         )
 
         strat = build_strategy(strategy, self._cfg)
+        logger.info(
+            "backtest_strategy_built",
+            strategy=strategy,
+            enabled=strat.enabled(),
+            nav=strat._nav,
+            params=sorted(strat.params.keys()),
+        )
+        if not strat.enabled():
+            logger.warning(
+                "backtest_strategy_disabled",
+                strategy=strategy,
+                hint=(
+                    f"Add or set `strategies.{strategy}.enabled: true` in "
+                    "your config.yaml. The strategy will emit zero signals "
+                    "otherwise."
+                ),
+            )
         engine = BacktestEngine(
             starting_nav=self._cfg.capital.nav,
             instruments=inst_map,

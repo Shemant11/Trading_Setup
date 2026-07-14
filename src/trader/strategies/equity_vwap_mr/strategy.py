@@ -13,8 +13,8 @@ from __future__ import annotations
 import math
 import uuid
 from dataclasses import dataclass, field
-from datetime import time, timedelta
-from typing import Any
+from datetime import date, time, timedelta
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from trader.config.loader import AppConfig
@@ -33,6 +33,7 @@ class _State:
     vwap: SessionVWAP = field(default_factory=SessionVWAP)
     dev: RollingBar = field(default_factory=lambda: RollingBar(window=20))
     signals_today: int = 0
+    current_day: Optional[date] = None
 
 
 class EquityVWAPMRStrategy(Strategy):
@@ -53,6 +54,16 @@ class EquityVWAPMRStrategy(Strategy):
         if not self._enabled:
             return []
         st = self._states.setdefault(bar.instrument_id, _State())
+
+        # Reset per-day counters on IST calendar-day boundaries, otherwise
+        # ``signals_today`` grows monotonically across the whole backtest and
+        # silently gags the strategy after the first day's cap.
+        bar_ist_dt = bar.ts_close.astimezone(IST)
+        bar_day = bar_ist_dt.date()
+        if st.current_day != bar_day:
+            st.current_day = bar_day
+            st.signals_today = 0
+
         st.vwap.update(bar.ts_close, bar.close, bar.volume)
         v = st.vwap.value
         if math.isnan(v):
@@ -61,7 +72,7 @@ class EquityVWAPMRStrategy(Strategy):
         st.dev.update(dev)
         if not st.dev.ready():
             return []
-        bar_ist = bar.ts_close.astimezone(IST).time()
+        bar_ist = bar_ist_dt.time()
         if bar_ist >= self.no_entry_after:
             return []
         if st.signals_today >= self.max_signals_per_day:

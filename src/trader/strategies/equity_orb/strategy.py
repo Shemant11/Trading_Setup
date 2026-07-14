@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import time
+from datetime import date, time
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -40,6 +40,7 @@ class _State:
     atr_15m: RollingATR = field(default_factory=lambda: RollingATR(window=15))
     vol_bar: RollingBar = field(default_factory=lambda: RollingBar(window=20))
     or_break_taken_today: str | None = None  # "long", "short", or None
+    current_day: Optional[date] = None
 
 
 class EquityORBStrategy(Strategy):
@@ -75,6 +76,16 @@ class EquityORBStrategy(Strategy):
         if not self._enabled:
             return []
         st = self._get_state(bar.instrument_id)
+
+        # Reset the "one break per day" latch on IST calendar-day boundaries,
+        # otherwise the strategy fires at most one trade per instrument for the
+        # entire backtest.
+        bar_ist_dt = bar.ts_close.astimezone(IST)
+        bar_day = bar_ist_dt.date()
+        if st.current_day != bar_day:
+            st.current_day = bar_day
+            st.or_break_taken_today = None
+
         st.session_or.update(bar.ts_close, bar.high)
         st.session_or.update(bar.ts_close, bar.low)
         st.session_vwap.update(bar.ts_close, bar.close, bar.volume)
@@ -82,7 +93,7 @@ class EquityORBStrategy(Strategy):
         st.vol_bar.update(bar.volume)
 
         # Only trade after OR window ends and before time_stop.
-        bar_ist = bar.ts_close.astimezone(IST).time()
+        bar_ist = bar_ist_dt.time()
         if bar_ist < self.or_end or bar_ist >= self.time_stop:
             return []
         if not st.session_or.ready:
