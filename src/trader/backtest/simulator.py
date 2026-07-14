@@ -82,10 +82,23 @@ class MarketSimulator:
             fill_price = ref_price * (1.0 - signed_impact)
 
         if req.order_type == OrderType.LIMIT and req.limit_price is not None:
-            if req.side == OrderSide.BUY and fill_price > req.limit_price:
-                return None, 0.0
-            if req.side == OrderSide.SELL and fill_price < req.limit_price:
-                return None, 0.0
+            # Bar-based LIMIT matching: the bar must have traded through the
+            # limit for a fill to be plausible. When it did, cap the fill
+            # price at the limit — a LIMIT is a worst-acceptable-price
+            # guarantee, so any adverse impact/slippage from the impact
+            # model above must not push the fill worse than the limit.
+            # Without this cap, every strategy that sets
+            # ``limit_price = bar.close`` (i.e. all of them) is rejected
+            # because slippage always makes ``fill_price`` slightly worse.
+            limit = req.limit_price
+            if req.side == OrderSide.BUY:
+                if bar.low > limit:
+                    return None, 0.0
+                fill_price = min(fill_price, limit)
+            else:
+                if bar.high < limit:
+                    return None, 0.0
+                fill_price = max(fill_price, limit)
 
         notional = fill_price * target_qty
         fees = self.cost_model.fee_for(
