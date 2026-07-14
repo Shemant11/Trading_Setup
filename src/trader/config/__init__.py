@@ -15,6 +15,7 @@ from trader.config.secrets import (
     SecretsStore,
     SecretsError,
     load_secrets,
+    resolve_passphrase,
     write_secrets,
 )
 from trader.config.loader import AppConfig, ConfigLoader, load_config
@@ -26,6 +27,7 @@ __all__ = [
     "SecretsStore",
     "SecretsError",
     "load_secrets",
+    "resolve_passphrase",
     "write_secrets",
     "AppConfig",
     "ConfigLoader",
