@@ -98,12 +98,19 @@ class EquityORBStrategy(Strategy):
         avg_vol = st.vol_bar.mean() or 0.0
         vol_ok = bar.volume >= (self.vol_multiplier * avg_vol) if avg_vol > 0 else False
 
+        # Book imbalance is fed externally by the live L2 depth stream. In
+        # backtests (and any bar-only environment) no depth data ever arrives,
+        # so treat "never seen" as pass-through rather than the neutral 0.5
+        # value that would fail both long and short gates when the threshold
+        # is above 0.5. Users who genuinely want to force the check off can
+        # still set ``book_imbalance_min: 0.0`` in config.
+        has_imb = bar.instrument_id in self._book_imb
         imb = self._book_imb.get(bar.instrument_id, 0.5)
 
         # ---- long breakout ----
         long_break = bar.close > or_hi * (1 + self.break_threshold_pct)
         vwap_ok_long = bar.close > vwap if not _isnan(vwap) else True
-        imb_ok_long = imb >= self.book_imbalance_min
+        imb_ok_long = (not has_imb) or (imb >= self.book_imbalance_min)
 
         if long_break and vol_ok and vwap_ok_long and imb_ok_long:
             st.or_break_taken_today = "long"
@@ -112,7 +119,7 @@ class EquityORBStrategy(Strategy):
         # ---- short breakout ----
         short_break = bar.close < or_lo * (1 - self.break_threshold_pct)
         vwap_ok_short = bar.close < vwap if not _isnan(vwap) else True
-        imb_ok_short = (1.0 - imb) >= self.book_imbalance_min
+        imb_ok_short = (not has_imb) or ((1.0 - imb) >= self.book_imbalance_min)
 
         if short_break and vol_ok and vwap_ok_short and imb_ok_short:
             st.or_break_taken_today = "short"

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -104,11 +104,16 @@ class ParquetStore:
     def read_bars(
         self, timeframe: str, security_id: str, start: datetime, end: datetime
     ) -> pl.DataFrame:
-        """Load bars in [start, end) as a Polars DataFrame."""
+        """Load bars in [start, end) as a Polars DataFrame.
+
+        The row-level filter is done in Polars (not pyarrow's dataset filter)
+        because pyarrow silently returns zero rows on any tz mismatch between
+        the query scalar and the stored column. Polars will coerce naive vs
+        tz-aware datetimes into a comparable form, so callers can pass either.
+        """
         dir_ = self.root / "bars" / timeframe
         if not dir_.exists():
             return pl.DataFrame()
-        # File-level filter for perf; row-level for correctness.
         files: list[str] = []
         cur = date(start.year, start.month, 1)
         end_month = date(end.year, end.month, 1)
@@ -122,9 +127,30 @@ class ParquetStore:
                 cur = date(cur.year, cur.month + 1, 1)
         if not files:
             return pl.DataFrame()
-        dataset = ds.dataset(files, format="parquet")
-        table = dataset.to_table(
-            filter=(ds.field("ts_open") >= pa.scalar(start))
-            & (ds.field("ts_open") < pa.scalar(end))
+        table = ds.dataset(files, format="parquet").to_table()
+        df = pl.from_arrow(table)
+        if df.is_empty():
+            return df
+
+        # Align tz of the scalars with the actual column dtype so the filter
+        # is always comparing like-with-like.
+        col_dtype = df.schema["ts_open"]
+        col_tz = getattr(col_dtype, "time_zone", None) if isinstance(
+            col_dtype, pl.Datetime
+        ) else None
+        if col_tz is not None:
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=timezone.utc)
+        else:
+            if start.tzinfo is not None:
+                start = start.astimezone(timezone.utc).replace(tzinfo=None)
+            if end.tzinfo is not None:
+                end = end.astimezone(timezone.utc).replace(tzinfo=None)
+
+        return (
+            df.filter(
+                (pl.col("ts_open") >= start) & (pl.col("ts_open") < end)
+            ).sort("ts_open")
         )
-        return pl.from_arrow(table).sort("ts_open")

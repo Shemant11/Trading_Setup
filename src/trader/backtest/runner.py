@@ -65,9 +65,24 @@ class BacktestRunner:
         assert self.store is not None
         for i in insts:
             df = self.store.read_bars(timeframe, i.security_id, start_dt, end_dt)
+            logger.info(
+                "backtest_bars_loaded",
+                instrument=i.symbol,
+                security_id=i.security_id,
+                timeframe=timeframe,
+                start=start_dt.isoformat(),
+                end=end_dt.isoformat(),
+                bars=len(df),
+            )
             for row in df.iter_rows(named=True):
                 bars.append(_row_to_bar(row))
         bars.sort(key=lambda b: b.ts_open)
+        logger.info(
+            "backtest_bars_total",
+            strategy=strategy,
+            bars=len(bars),
+            instruments=len(insts),
+        )
 
         strat = build_strategy(strategy, self._cfg)
         engine = BacktestEngine(
