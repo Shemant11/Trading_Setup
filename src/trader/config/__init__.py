@@ -10,11 +10,13 @@ Argon2-derived, AES-GCM encrypted file `~/.trader/secrets.enc`. They are
 loaded once at process start and held in memory only.
 """
 
+from trader.config.paths import expand_path, normalize_sqlite_url
 from trader.config.settings import Settings, get_settings, reset_settings
 from trader.config.secrets import (
     SecretsStore,
     SecretsError,
     load_secrets,
+    resolve_passphrase,
     write_secrets,
 )
 from trader.config.loader import AppConfig, ConfigLoader, load_config
@@ -26,8 +28,11 @@ __all__ = [
     "SecretsStore",
     "SecretsError",
     "load_secrets",
+    "resolve_passphrase",
     "write_secrets",
     "AppConfig",
     "ConfigLoader",
     "load_config",
+    "expand_path",
+    "normalize_sqlite_url",
 ]

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -71,7 +72,12 @@ class Application:
 
         # Storage
         db = create_database(config.storage.db_url)
-        redis = RedisClient.create(config.storage.redis_url)
+        redis_enabled = bool(config.storage.redis_enabled)
+        redis = RedisClient.create(
+            config.storage.redis_url or "", enabled=redis_enabled
+        )
+        if not redis_enabled:
+            logger.info("redis_disabled", reason="not configured")
         journal = Journal(db=db)
 
         # Brokers
@@ -126,15 +132,53 @@ class Application:
             except Exception as e:  # noqa: BLE001
                 return HealthResult(HealthStatus.DOWN, str(e))
 
-        async def _redis_check() -> HealthResult:
-            ok = await redis.ping()
-            return HealthResult(
-                HealthStatus.OK if ok else HealthStatus.DEGRADED,
-                "ok" if ok else "ping failed",
-            )
-
         health.register("db", _db_check)
-        health.register("redis", _redis_check)
+
+        if redis_enabled:
+            # One-shot startup ping. If Redis is documented as optional but the
+            # user *did* configure a URL, we still want to be graceful when the
+            # daemon happens to be down at boot — log ONCE and skip registering
+            # the recurring check so /health polls don't spam warnings.
+            first_ping_ok = await redis.ping()
+            if not first_ping_ok:
+                logger.warning(
+                    "redis_unavailable",
+                    url=config.storage.redis_url,
+                    detail="falling back to in-process bus (health check will be skipped)",
+                )
+            else:
+                # Register a throttled recurring check. State lives on the
+                # closure so we don't need a new module-level singleton.
+                redis_state: dict[str, float | bool] = {
+                    "last_warn_ts": 0.0,
+                    "was_down": False,
+                }
+                warn_interval_sec = 300.0
+
+                async def _redis_check() -> HealthResult:
+                    ok = await redis.ping()
+                    now = time.monotonic()
+                    if ok:
+                        if redis_state["was_down"]:
+                            logger.info("redis_recovered", url=config.storage.redis_url)
+                            redis_state["was_down"] = False
+                            redis_state["last_warn_ts"] = 0.0
+                        return HealthResult(HealthStatus.OK, "ok")
+                    redis_state["was_down"] = True
+                    if now - float(redis_state["last_warn_ts"]) > warn_interval_sec:
+                        logger.warning(
+                            "redis_ping_failed",
+                            url=config.storage.redis_url,
+                        )
+                        redis_state["last_warn_ts"] = now
+                    else:
+                        logger.debug(
+                            "redis_ping_failed",
+                            url=config.storage.redis_url,
+                        )
+                    return HealthResult(HealthStatus.DEGRADED, "ping failed")
+
+                health.register("redis", _redis_check)
         for name, broker in brokers.items():
             def _factory(b: Broker = broker):
                 async def _check() -> HealthResult:
@@ -216,7 +260,8 @@ class Application:
     async def status_only(cls, cfg: AppConfig) -> dict[str, HealthResult]:
         # Lightweight probe — build a stripped-down app with just db+redis.
         db = create_database(cfg.storage.db_url)
-        redis = RedisClient.create(cfg.storage.redis_url)
+        redis_enabled = bool(cfg.storage.redis_enabled)
+        redis = RedisClient.create(cfg.storage.redis_url or "", enabled=redis_enabled)
         health = HealthMonitor()
 
         async def _db() -> HealthResult:
@@ -227,15 +272,17 @@ class Application:
             except Exception as e:  # noqa: BLE001
                 return HealthResult(HealthStatus.DOWN, str(e))
 
-        async def _rd() -> HealthResult:
-            ok = await redis.ping()
-            return HealthResult(
-                HealthStatus.OK if ok else HealthStatus.DEGRADED,
-                "ok" if ok else "ping failed",
-            )
-
         health.register("db", _db)
-        health.register("redis", _rd)
+
+        if redis_enabled:
+            async def _rd() -> HealthResult:
+                ok = await redis.ping()
+                return HealthResult(
+                    HealthStatus.OK if ok else HealthStatus.DEGRADED,
+                    "ok" if ok else "ping failed",
+                )
+
+            health.register("redis", _rd)
         try:
             return await health.run()
         finally:

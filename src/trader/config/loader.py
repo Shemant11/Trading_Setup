@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from trader.config.paths import expand_path, normalize_sqlite_url
 
 
 def _parse_time(s: str | time) -> time:
@@ -26,7 +28,12 @@ def _parse_time(s: str | time) -> time:
 
 
 class _Section(BaseModel):
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    # ``validate_default=True`` so field validators (e.g. the ``~``-expander
+    # on :class:`StorageSection.db_url`) also fire on the built-in defaults,
+    # not only on values pulled from user YAML.
+    model_config = ConfigDict(
+        extra="allow", populate_by_name=True, validate_default=True
+    )
 
 
 class AppSection(_Section):
@@ -50,9 +57,36 @@ class BrokersSection(_Section):
 
 class StorageSection(_Section):
     db_url: str = "sqlite+aiosqlite:///~/.trader/trader.db"
-    redis_url: str = "redis://localhost:6379/0"
+    # Redis is OPTIONAL — set ``redis_enabled: false`` (or leave ``redis_url``
+    # empty / ``"disabled"``) to run fully in-process. Default keeps
+    # back-compat for existing configs that assume a local Redis daemon.
+    redis_url: Optional[str] = "redis://localhost:6379/0"
+    redis_enabled: bool = True
     parquet_root: str = "~/.trader/parquet"
     journal_batch_size: int = 100
+
+    @field_validator("db_url", mode="before")
+    @classmethod
+    def _normalize_db_url(cls, v: str) -> str:
+        # For SQLite: expand ``~`` / env vars, force forward slashes, and
+        # create the parent directory so the first connect succeeds. Any
+        # non-sqlite URL (Postgres, ...) is returned unchanged.
+        return normalize_sqlite_url(v) if v else v
+
+    @field_validator("parquet_root", mode="before")
+    @classmethod
+    def _normalize_parquet_root(cls, v: str) -> str:
+        return str(expand_path(v)) if v else v
+
+    @model_validator(mode="after")
+    def _resolve_redis_enabled(self) -> StorageSection:
+        # Treat an empty/None/"disabled" URL as an explicit opt-out even if
+        # the user forgot to also set ``redis_enabled: false``. This keeps the
+        # single knob ergonomic: users only need to clear the URL to disable.
+        url = (self.redis_url or "").strip()
+        if not url or url.lower() == "disabled":
+            object.__setattr__(self, "redis_enabled", False)
+        return self
 
 
 class TelegramSection(_Section):

@@ -152,10 +152,15 @@ print('secrets written', len(secrets))
 def run_migrations(venv: Path) -> None:
     py = _venv_python(venv)
     log("running alembic migrations ...")
+    # Compose the URL with forward slashes so it works on Windows
+    # (``sqlite:///C:/Users/.../trader.db``) as well as POSIX.
+    db_file = (HOME / "trader.db").resolve()
+    db_file.parent.mkdir(parents=True, exist_ok=True)
+    db_url = f"sqlite:///{db_file.as_posix()}"
     subprocess.check_call(
         [str(py), "-m", "alembic", "upgrade", "head"],
         cwd=str(ROOT),
-        env={**os.environ, "TRADER_DB_URL": f"sqlite:///{HOME / 'trader.db'}"},
+        env={**os.environ, "TRADER_DB_URL": db_url},
     )
     log("db schema ready")
 
