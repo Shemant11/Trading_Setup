@@ -8,7 +8,7 @@ BacktestEngine and returns the result.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -50,6 +50,14 @@ class BacktestRunner:
         assert self._cfg is not None
         start_dt = datetime.fromisoformat(start)
         end_dt = datetime.fromisoformat(end)
+        # Parquet columns are tz-aware UTC (see marketdata.backfill). PyArrow's
+        # dataset filter refuses to compare a tz-aware column with a naive
+        # scalar and silently returns zero rows; normalise here so a plain
+        # ``YYYY-MM-DD`` on the CLI still matches the stored bars.
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
         insts = list(instruments) if instruments else self._demo_universe()
         inst_map = {i.security_id: i for i in insts}
 
