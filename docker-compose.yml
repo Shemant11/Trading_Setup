@@ -1,0 +1,72 @@
+# Optional docker-compose. System runs Docker-free using native Redis + SQLite.
+# Bring these up if you prefer Redis in a container, or want to upgrade to Postgres/Grafana.
+#
+#   docker compose up -d redis           # minimal
+#   docker compose up -d                 # everything
+#
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: trader-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - trader-redis:/data
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: trader-postgres
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trader
+      POSTGRES_DB: trader
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - trader-postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: trader-prometheus
+    profiles: ["observability"]
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - trader-prom:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: trader-grafana
+    profiles: ["observability"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - trader-grafana:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  trader-redis:
+  trader-postgres:
+  trader-prom:
+  trader-grafana:

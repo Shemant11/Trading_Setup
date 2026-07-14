@@ -1,0 +1,60 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  json:
+    (): structlog.stdlib.ProcessorFormatter
+    processor:
+      (): structlog.processors.JSONRenderer
+  console:
+    (): structlog.stdlib.ProcessorFormatter
+    processor:
+      (): structlog.dev.ConsoleRenderer
+      colors: true
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: console
+    level: INFO
+    stream: ext://sys.stdout
+
+  app_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    formatter: json
+    level: DEBUG
+    filename: logs/trader.log
+    when: midnight
+    backupCount: 30
+    encoding: utf-8
+
+  err_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    formatter: json
+    level: ERROR
+    filename: logs/trader.err.log
+    when: midnight
+    backupCount: 60
+    encoding: utf-8
+
+loggers:
+  trader:
+    level: DEBUG
+    handlers: [console, app_file, err_file]
+    propagate: false
+  uvicorn:
+    level: INFO
+    handlers: [console, app_file]
+    propagate: false
+  uvicorn.access:
+    level: WARNING
+    handlers: [console, app_file]
+    propagate: false
+  httpx:
+    level: WARNING
+    handlers: [console, app_file]
+    propagate: false
+
+root:
+  level: WARNING
+  handlers: [console, app_file]

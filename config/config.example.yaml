@@ -1,0 +1,123 @@
+# trader — main configuration. Copy to ~/.trader/config.yaml and edit.
+
+app:
+  name: trader
+  env: dev                    # dev | paper | live
+  timezone: Asia/Kolkata
+
+capital:
+  nav: 1000000                # ₹10 lakh starting NAV
+  currency: INR
+
+# Broker routing. Dhan is primary. Groww is failover for cash equity only.
+brokers:
+  primary: dhan
+  failover_equity: groww
+  failover_options: null      # options never failover
+  order_rate_limit_per_sec: 8
+  api_timeout_sec: 5
+
+# Storage
+storage:
+  db_url: sqlite+aiosqlite:///~/.trader/trader.db
+  redis_url: redis://localhost:6379/0
+  parquet_root: ~/.trader/parquet
+  journal_batch_size: 100
+
+# Notifications
+notifications:
+  telegram:
+    enabled: false
+    bot_token: null           # set via secrets, not here
+    chat_ids: []
+  email:
+    enabled: false
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    from_addr: null
+    to_addrs: []
+
+# Risk (see docs/architecture.md § Risk)
+risk:
+  # Layer 1
+  fractional_kelly: 0.25
+  target_position_vol_pct: 0.005     # 0.5% NAV/day
+  # Layer 2
+  portfolio_heat_cap_pct: 0.04       # 4% NAV open risk
+  consecutive_losses_softbrake: 3
+  consecutive_losses_hardpause: 5
+  # Layer 3
+  daily_loss_limit_pct: 0.015
+  weekly_loss_limit_pct: 0.035
+  monthly_loss_limit_pct: 0.06
+  rolling_3m_dd_pause_pct: 0.08
+  max_gross_leverage: 3.0
+  max_net_delta_pct: 1.0
+  max_single_stock_pct: 0.10
+  max_single_sector_pct: 0.25
+  max_avg_correlation: 0.7
+  # Layer 4
+  vix_spike_halve_pct: 0.30
+  nifty_shock_15m_pct: 0.02
+  broker_latency_p95_halt_ms: 1000
+  clock_drift_halt_ms: 500
+
+# Strategies (each has its own file too under docs/strategies)
+strategies:
+  equity_orb:
+    enabled: true
+    risk_pct_per_trade: 0.004
+    max_positions: 5
+    or_start: "09:15"
+    or_end: "09:30"
+    session_no_entry_windows: [["09:15","09:20"], ["15:00","15:30"]]
+    time_stop: "14:45"
+    auto_square_off: "15:15"
+
+  equity_vwap_mr:
+    enabled: true
+    risk_pct_per_trade: 0.0025
+    z_entry: 1.5
+    z_stop: 2.0
+    max_hold_minutes: 45
+
+  options_iron_condor:
+    enabled: false
+    underlying: [NIFTY, BANKNIFTY]
+    ivr_min: 70
+    em_multiplier_short: 1.2
+    em_multiplier_wings: 2.0
+
+  options_debit_spread:
+    enabled: false
+    underlying: [NIFTY, BANKNIFTY, RELIANCE, HDFCBANK]
+
+  options_expiry_butterfly:
+    enabled: false
+    underlying: [BANKNIFTY]
+
+  swing_breakout:
+    enabled: false
+    risk_pct_per_trade: 0.005
+    max_positions: 12
+    per_sector_cap: 3
+
+# Regime classifier
+regime:
+  refresh_time: "09:20"
+  model_path: models/regime.pkl
+
+# Backtest
+backtest:
+  volume_participation_cap: 0.10
+  slippage_impact_k: 0.10       # impact_bps = k * sqrt(size/ADV)
+  commission_model: dhan_default
+
+# Universe (F&O stocks for intraday)
+universe:
+  fno_only: true
+  min_adv_cr: 200
+  min_price: 100
+  max_price: 5000
+  max_spread_bps: 5
+  refresh_day: monday
