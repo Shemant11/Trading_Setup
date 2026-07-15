@@ -131,13 +131,22 @@ def backtest(
     strategy: str = typer.Argument(..., help="Strategy key, e.g. equity_orb"),
     start: str = typer.Argument(..., help="YYYY-MM-DD"),
     end: str = typer.Argument(..., help="YYYY-MM-DD"),
+    timeframe: str = typer.Option(
+        "5m",
+        help="Bar timeframe to load from the Parquet store: 1m | 5m | 15m | "
+        "30m | 1h | 1d. Must match what was backfilled AND what the strategy "
+        "expects (equity_orb / equity_vwap_mr use intraday; swing_breakout "
+        "requires 1d).",
+    ),
 ) -> None:
     """Run a backtest for a single strategy."""
     _init()
     from trader.backtest.runner import BacktestRunner
 
     runner = BacktestRunner()
-    result = asyncio.run(runner.run(strategy=strategy, start=start, end=end))
+    result = asyncio.run(
+        runner.run(strategy=strategy, start=start, end=end, timeframe=timeframe)
+    )
     console.print(result.summary())
 
 

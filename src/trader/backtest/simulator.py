@@ -66,6 +66,12 @@ class MarketSimulator:
         # Cap fill by participation of the bar volume.
         max_by_vol = int(bar.volume * self.participation_cap)
         target_qty = min(req.qty, max(max_by_vol, 1))
+        # Guard: strategies occasionally emit ``intended_qty=0`` as a
+        # degenerate short-circuit (e.g. equity_orb when risk_per_share is 0).
+        # Fill with zero shares would create a phantom trade in the book and
+        # corrupt PnL bookkeeping, so drop it as an unfilled signal.
+        if target_qty <= 0:
+            return None, 0.0
 
         # Reference price: prefer VWAP when available, else close.
         ref_price = bar.vwap or bar.close

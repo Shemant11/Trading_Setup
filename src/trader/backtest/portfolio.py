@@ -78,20 +78,28 @@ class PortfolioTracker:
             first_stop: Optional[float] = None
             while remaining != 0 and lots:
                 lot_qty, lot_price, lot_ts, lot_strategy, _lot_tag, lot_stop = lots[0]
-                consumed = -min(abs(lot_qty), abs(remaining)) * (1 if lot_qty < 0 else -1)
-                if lot_qty > 0:  # was long
-                    realized += (fill.price - lot_price) * abs(consumed)
-                else:            # was short
-                    realized += (lot_price - fill.price) * abs(consumed)
-                entry_qty_total += abs(consumed)
-                entry_notional += lot_price * abs(consumed)
+                # ``match`` is the (positive) number of units this iteration
+                # closes against the head lot. ``lot_delta`` is how much the
+                # lot's signed qty changes (opposite sign to the lot), and
+                # ``remaining_delta`` is how much ``remaining`` moves toward
+                # zero (opposite sign of ``remaining``).
+                match = min(abs(lot_qty), abs(remaining))
+                if lot_qty > 0:  # was long → sell into it
+                    realized += (fill.price - lot_price) * match
+                    lot_delta = -match
+                    remaining_delta = +match
+                else:            # was short → buy into it
+                    realized += (lot_price - fill.price) * match
+                    lot_delta = +match
+                    remaining_delta = -match
+                entry_qty_total += match
+                entry_notional += lot_price * match
                 if entry_ts_first is None:
                     entry_ts_first = lot_ts
                     first_lot_strategy = lot_strategy
                     first_stop = lot_stop
-                # Update lot
                 lots[0] = (
-                    lot_qty + consumed,
+                    lot_qty + lot_delta,
                     lot_price,
                     lot_ts,
                     lot_strategy,
@@ -100,7 +108,7 @@ class PortfolioTracker:
                 )
                 if lots[0][0] == 0:
                     lots.pop(0)
-                remaining += consumed
+                remaining += remaining_delta
 
             if remaining != 0:
                 # Position flipped direction — push residual as new lot.
